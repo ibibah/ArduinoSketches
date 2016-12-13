@@ -4,6 +4,7 @@
 //
 // Module de gestion de piscine
 // Modifié le 14/10/2016 Version 1.2 : suppression synchro NTP affichage T? T= pour connexion MQTT
+// Modifié le 12/12/2016 Version 1.3 : suppression du code NTP
 
 #include <avr/wdt.h>
 #include <Ethernet.h>
@@ -15,7 +16,7 @@
 #include <LiquidCrystal.h>
 
 
-const char* version = "1.2";
+const char* version = "1.3";
 
 // variables de travail
 char textBuffer[256];
@@ -27,14 +28,6 @@ char floatTextBuffer[20];
 
 const uint8_t   myMAC[] = { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
 const IPAddress myIP(192, 168, 10, 250);
-
-
-//// -------------------------------------------------------------------------------------
-//// CONFIGURATION NTP
-//// -------------------------------------------------------------------------------------
-//
-//const IPAddress    NTPServerIP(192, 168, 10, 1);
-//const unsigned int NTPLocalPort = 8888;
 
 // -------------------------------------------------------------------------------------
 // CONFIGURATION MQTT
@@ -135,98 +128,6 @@ char* ftoa(char* a, double f, int precision)
  itoa(desimal, a, 10);
  return ret;
 }
-
-//// -------------------------------------------------------------------------------------
-//// GESTION HEURE PAR NTP
-//// -------------------------------------------------------------------------------------
-//
-//// Connexion UDP pour envoyer les demandes NTP
-//EthernetUDP NTP_UDP;
-//
-//const int NTP_PACKET_SIZE = 48;     // NTP time is in the first 48 bytes of message
-//byte packetBuffer[NTP_PACKET_SIZE]; // bufffer to hold incoming & outgoing packets
-//
-//// Central European Time (Paris)
-//TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120}; // Central European Summer Time
-//TimeChangeRule CET  = {"CET ", Last, Sun, Oct, 3, 60};  // Central European Standard Time
-//Timezone CE(CEST, CET);
-//
-//// Fonction de mise à jour de l'heure
-//// ----------------------------------
-//time_t GetNTPTime()
-//{
-//  // discard any previously received packets
-//  while ( NTP_UDP.parsePacket() > 0 ) ;
-//
-//  LogConsole("Envoi d'une requète NTP\n");
-//  SendNTPpacket(NTPServerIP);
-//  LogConsole("requète NTP emise\n");
-//  uint32_t beginWait = millis();
-//  while ( millis() - beginWait < 1500 )
-//  {
-//    int size = NTP_UDP.parsePacket();
-//    if ( size >= NTP_PACKET_SIZE )
-//    {
-//      LogConsole("Réception d'une réponse NTP\n");
-//      NTP_UDP.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
-//
-//      // convert four bytes starting at location 40 to a long integer
-//      unsigned long secsSince1900;
-//      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
-//      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
-//      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
-//      secsSince1900 |= (unsigned long)packetBuffer[43];
-//      time_t res = secsSince1900 - 2208988800UL;
-//      res = CE.toLocal(res);
-//      return res;
-//    }
-//  }
-//
-//  LogConsole("Pas de réponse NTP :-(\n");
-//  return 0; // return 0 if unable to get the time
-//}
-//
-//
-//// Envoyer une requète NTP au serveur de temps
-//// -------------------------------------------
-//void SendNTPpacket(const IPAddress& address)
-//{
-//  // set all bytes in the buffer to 0
-//  memset(packetBuffer, 0, NTP_PACKET_SIZE);
-//
-//  // Initialize values needed to form NTP request
-//  // (see URL above for details on the packets)
-//  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-//  packetBuffer[1] = 0;     // Stratum, or type of clock
-//  packetBuffer[2] = 6;     // Polling Interval
-//  packetBuffer[3] = 0xEC;  // Peer Clock Precision
-//
-//  // 8 bytes of zero for Root Delay & Root Dispersion
-//  packetBuffer[12]  = 49;
-//  packetBuffer[13]  = 0x4E;
-//  packetBuffer[14]  = 49;
-//  packetBuffer[15]  = 52;
-//
-//  // all NTP fields have been given values, now
-//  // you can send a packet requesting a timestamp:
-//  NTP_UDP.beginPacket(address, 123); // NTP requests are to port 123
-//   LogConsole("NTP_UDP.beginPacket(address, 123)\n");    
-//  NTP_UDP.write(packetBuffer, NTP_PACKET_SIZE);
-//   LogConsole("NTP_UDP.write(packetBuffer, NTP_PACKET_SIZE)\n");    
-//  NTP_UDP.endPacket();
-//   LogConsole("NTP_UDP.endPacket()\n");    
-//}
-//
-//
-//// Affichage de l'heure
-//// --------------------
-//void DigitalClockDisplay()
-//{
-//  sprintf(textBuffer, "%02d:%02d:%02d - %02d/%02d/%02d\n",
-//          hour(), minute(), second(), day(), month(), year());
-//  LogConsole(textBuffer);
-//}
-//
 
 // -------------------------------------------------------------------------------------
 // GESTION MQTT
@@ -927,9 +828,6 @@ void setup()
   // Configuration Ethernet
   Ethernet.begin((uint8_t*)myMAC, myIP);
 
-//  // Initialisation connexion NTP
-//  NTP_UDP.begin(NTPLocalPort);
-
   // Initialisation du LCD
   lcd.begin(16, 2);
   lcd.clear();
@@ -950,61 +848,6 @@ void setup()
     Ethernet.maintain();
   }
 
- 
-//  // Synchronisation NTP
-//  lcd.clear();
-//  lcd.setCursor(0, 0);
-//  lcd.print("Sync. NTP ...");
-//  // positionnement de la methode de maj de l'heure
-//  setSyncProvider(GetNTPTime);
-//
-//  // On attend que l'heure soit OK
-//  LogConsole("Attente de synchronisation NTP\n");
-//  uint8_t loopIndex = 10;
-//  beginWait = millis();
-//  bool exit = false;
-//  while ( (timeStatus() == timeNotSet) &&
-//          (exit == false) ) 
-//  {
-//    // mis a jour de l'affichage toutes les secondes
-//    if ( millis() - beginWait > 1000 )
-//    {
-//      if ( loopIndex == 0)
-//      {
-//        exit = true;
-//      }
-//      else
-//      {
-//        loopIndex--;
-//    
-//        sprintf(textBuffer, "Attente Sync NTP %d\n", loopIndex);
-//        LogConsole(textBuffer);
-//        lcd.setCursor(14, 0);
-//        sprintf(textBuffer, "%02d", loopIndex);
-//        lcd.print(textBuffer);
-//
-//        beginWait = millis();
-//      }
-//   }
-//  }
-  
-//  lcd.clear();
-//  lcd.setCursor(0, 0);
-//  if ( timeStatus() != timeNotSet )
-//  {
-//    lcd.print("Sync. NTP OK");
-//    lcd.setCursor(0, 1);
-//    char buffer[20];
-//    sprintf(buffer, "%02d:%02d %02d/%02d/%04d", hour(), minute(), day(), month(), year());
-//    lcd.print(buffer);
-//    LogConsole("Synchronisation NTP OK !\n");
-//  }
-//  else
-//  {
-//    lcd.print("Sync. NTP Failed");
-//    LogConsole("Synchronisation NTP Failed !\n");    
-//  }
-//
   delay(1000);
   
   // Initialisation du capteur de température de l'eau
@@ -1034,17 +877,6 @@ void loop()
   time_t        nowSec      = now();
   unsigned long nowMillisec = millis();
   
-//  // Syncho de l'heure si besoin
-//  if ( timeStatus() != timeNotSet )
-//  {
-//    if ( nowSec != prevDisplay )
-//    {
-//      // update the display only if time has changed
-//      prevDisplay = nowSec;
-//      DigitalClockDisplay();
-//    }
-//  }
-
   // Gestion de la connexion MQTT
   if ( !client.connected() )
   {
