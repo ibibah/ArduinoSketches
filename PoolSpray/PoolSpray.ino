@@ -6,10 +6,12 @@
 // Modifié le 14/10/2016 Version 1.2 : suppression synchro NTP affichage T? T= pour connexion MQTT
 // Modifié le 12/12/2016 Version 1.3 : suppression du code NTP
 // Modifié le 05/03/2017 Version 1.4 : création Utils.h + bascule relais sur appuie bouton ( rester sur DHT 1.2.3, pas 1.3.0(compile pas))
+// Modifié le 05/03/2017 Version 1.5 : transmission UDP BROADCAST 2300 du log + commande UDP "reset"
 
 #include "Utils.h"
 #include <avr/wdt.h>
 #include <Ethernet.h>
+#include <EthernetUdp.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
 #include <Time.h>
 #include <PubSubClient.h>
 #include <OneWire.h>
@@ -17,7 +19,7 @@
 #include <LiquidCrystal.h>
 #include <EthernetBonjour.h>    // https://github.com/TrippyLighting/EthernetBonjour
 
-const char* version = "1.4";
+const char* version = "1.5";
 
 // variables de travail
 char textBuffer[256];
@@ -31,6 +33,14 @@ byte   mac[] = { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
 IPAddress ip(192, 168, 10, 250);
 IPAddress gateway(192, 168, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
+IPAddress broadcastIp(192, 168, 10, 255);
+
+// An EthernetUDP instance to let us send and receive packets over UDP
+EthernetUDP UdpSocketLog;
+unsigned int UdpPortListen = 2301;                // local udp port to listen on and to send to
+unsigned int UdpPortSend   = 2300;                // local udp port to listen on and to send to
+// buffers for receiving and sending data
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE];  //buffer to hold incoming packet,
 
 // -------------------------------------------------------------------------------------
 // CONFIGURATION MQTT
@@ -39,20 +49,57 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress remoteJeedomIp(0, 0, 0, 0); // resolu par dns avec ibibahjeedom.local
 const unsigned int MQTTBrokerPort = 1883;
 
+void software_Reboot()
+{
+  wdt_enable(WDTO_15MS);
 
+  while(1)
+  {
+
+  }
+}
 
 void LogConsole(char* s)
 {
   utf8ascii(s);
+
+  if( UdpSocketLog.beginPacket(broadcastIp, UdpPortSend) )
+  {
+    UdpSocketLog.write(s);
+    UdpSocketLog.endPacket();
+  }
+  
   Serial.print(s);
 }
 
+void ReadUdpSocket()
+{
+  // if there's data available, read a packet
+  int packetSize = UdpSocketLog.parsePacket();
+  if (packetSize) 
+  {
+    //IPAddress remote = Udp.remoteIP();
+    //Udp.remotePort()
+
+    // read the packet into packetBufffer
+    UdpSocketLog.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
+
+    sprintf(textBuffer, "Recu udp : '%s'\n", packetBuffer);
+    LogConsole(textBuffer);
+    // On compare les 5 premieres caractères pour ne pas se préoccuper du '\n'
+    if ( strncmp( packetBuffer , "reset", 5 ) == 0 )
+    {
+      LogConsole("software_Reboot PoolAndSpray ...\n");
+      software_Reboot();
+    }
+  }
+}
 
 // -------------------------------------------------------------------------------------
 // GESTION MQTT
 // -------------------------------------------------------------------------------------
 EthernetClient ethClient;
-PubSubClient   client(ethClient);
+PubSubClient   mqttClient(ethClient);
 
 
 // Fonction de reconnexion au broker MQTT
@@ -61,21 +108,21 @@ boolean ReconnectMQTT()
 {
   // Connexion au broker MQTT
   LogConsole("Connexion au broker MQTT\n");
-  if ( client.connect("PoolAndSpray") )
+  if ( mqttClient.connect("PoolAndSpray") )
   {
     LogConsole("Connecté au broker MQTT\n");
     
-    client.publish("PoolAndSpray/Message","Connecte au broker MQTT");
+    mqttClient.publish("PoolAndSpray/Message","Connecte au broker MQTT");
     
     // ... and resubscribe
-    client.subscribe("PoolAndSpray/Relais/Activer");
+    mqttClient.subscribe("PoolAndSpray/Relais/Activer");
   }
   else
   {
     LogConsole("Erreur de connection au broker MQTT\n");    
   }
 
-  return client.connected();
+  return mqttClient.connected();
 }
 
 
@@ -277,43 +324,40 @@ void UpdatePH()
  
 
 #ifdef DEBUG_PH_ORP
-  Serial.print("analogRead(pin_pH) = ");
-  Serial.println(average);
+  sprintf(textBuffer, "analogRead(pin_pH) = %d\n", average);
+  LogConsole(textBuffer);
 #endif
   
   // CONVERT TO VOLTAGE
   float voltage = (5.0 * average) / 1023; // voltage = 0..5V;  we do the math in millivolts!!
 
 #ifdef DEBUG_PH_ORP
-  Serial.print("voltage = ");
-  Serial.println(voltage);
+  sprintf(textBuffer, "voltage = %f\n", voltage);
+  LogConsole(textBuffer);
 #endif
   
   // Valeur du pH
   pH = (0.0178 * voltage * 200.0) - 1.889;
 
 #ifdef DEBUG_PH_ORP
-  Serial.print("pH (avant calibration) = ");
-  Serial.println(pH);
+  sprintf(textBuffer, "pH (avant calibration) =  %f\n", pH);
+  LogConsole(textBuffer);
 #endif
   
   // Lecture de la valeur brute du potentiomètre de calibration sur le port analogique
   float tempPotentiometerValue = analogRead(pin_pHPotentiometer);
   
 #ifdef DEBUG_PH_ORP
-  Serial.print("analogRead(pin_pHPotentiometer) = ");
-  Serial.println(tempPotentiometerValue);
+  sprintf(textBuffer, "analogRead(pin_pHPotentiometer) = %f\n", tempPotentiometerValue);
+  LogConsole(textBuffer);
 #endif
 
   // On utilise la calibration entre -1.0 et +1.0
   tempPotentiometerValue = (tempPotentiometerValue - 512.0) / 500.0;
   
 #ifdef DEBUG_PH_ORP
-  //Serial.print("tempPotentiometerValue = ");
-  //Serial.println(tempPotentiometerValue);
-  dtostrf(tempPotentiometerValue, 4, 1, floatTextBuffer);
-  sprintf(textBuffer, "tempPotentiometerValue = %s\n", floatTextBuffer);
-  Serial.println(textBuffer);
+  sprintf(textBuffer, "tempPotentiometerValue = %f\n", tempPotentiometerValue);
+  LogConsole(textBuffer);
 #endif
 
   // Adaptation du pH
@@ -372,8 +416,8 @@ void UpdateLiquidLevel()
 {
   int raw = digitalRead(FLOATLEVELPIN); 
 
-  Serial.print("liquidLevelSensor sensor = ");
-  Serial.println(raw);
+  sprintf(textBuffer, "liquidLevelSensor sensor = %d\n", raw);
+  LogConsole(textBuffer);
 
   liquidLevel = (raw == HIGH)? 0: 1;
 }
@@ -398,8 +442,8 @@ void UpdateFilterPressure()
   for (int i=0; i< count; i++) raw += analogRead(pin_filterPressure);  // return 0..1023 
   raw = raw / count;
 
-  Serial.print("raw pressure sensor = ");
-  Serial.println(raw);
+  sprintf(textBuffer, "raw pressure sensor = %d\n" , raw);
+  LogConsole(textBuffer);
 
   // CONVERT TO VOLTAGE
   float voltage = 5.0 * raw / 1023; // voltage = 0..5V;  we do the math in millivolts!!
@@ -412,9 +456,9 @@ void UpdateFilterPressure()
   else if (voltage < 4.5)  // between 0.5 and 4.5 now...
   {
     filterPressure = mapFloat(voltage, 0.5, 4.5, 0.0, 12.0);    // variation on the Arduino map() function
-    Serial.print(millis());
-    Serial.print(", ");
-    Serial.println(filterPressure, 3);  // 3 decimals
+    
+    sprintf(textBuffer, "filterPressure = %d, %f\n" , millis(), filterPressure);
+    LogConsole(textBuffer);
   }
   else
   {
@@ -436,11 +480,14 @@ int rainSensorValue = 0;
 void UpdateRainDropDetection()
 {
   int rainSensorReading = analogRead(pin_rainDropSensor);
-  Serial.print("rainSensorReading = ");
-  Serial.println(rainSensorReading);
+
+  sprintf(textBuffer, "rainSensorReading = %d\n" , rainSensorReading);
+  LogConsole(textBuffer);
+  
   rainSensorValue = map( rainSensorReading, rainSensorMinValue, rainSensorMaxValue, 0, 3);
-  Serial.print("rainSensorValue = ");
-  Serial.println(rainSensorValue);
+
+  sprintf(textBuffer, "rainSensorValue = %d\n" , rainSensorValue);
+  LogConsole(textBuffer);
 }
 
 // -------------------------------------------------------------------------------------
@@ -564,7 +611,7 @@ void Display(int screen)
    }
 
    lcd.setCursor(14, 1);    
-   if ( !client.connected() )
+   if ( !mqttClient.connected() )
    {
      lcd.print("T?");
    }
@@ -585,53 +632,53 @@ void UpdateMQTT()
 
   dtostrf(roomTemperature, 4, 1, floatTextBuffer);
   sprintf(textBuffer, "%s", floatTextBuffer);
-  client.publish("PoolAndSpray/Local/Temperature", textBuffer);
+  mqttClient.publish("PoolAndSpray/Local/Temperature", textBuffer);
 
   dtostrf(roomHumidity, 2, 0, floatTextBuffer);
   sprintf(textBuffer, "%s", floatTextBuffer);
-  client.publish("PoolAndSpray/Local/Humidite", textBuffer);
+  mqttClient.publish("PoolAndSpray/Local/Humidite", textBuffer);
 
   dtostrf(waterTemperature, 4, 1, floatTextBuffer);
   sprintf(textBuffer, "%s", floatTextBuffer);
-  client.publish("PoolAndSpray/Pool/Eau/Temperature", textBuffer);
+  mqttClient.publish("PoolAndSpray/Pool/Eau/Temperature", textBuffer);
   
   dtostrf(pH, 3, 1, floatTextBuffer);
   sprintf(textBuffer, "%s", floatTextBuffer);
-  client.publish("PoolAndSpray/Pool/Eau/PH", textBuffer);
+  mqttClient.publish("PoolAndSpray/Pool/Eau/PH", textBuffer);
 
   sprintf(textBuffer, "%d", liquidLevel);
-  client.publish("PoolAndSpray/Pool/Filtration/NiveauLiquide", textBuffer);
+  mqttClient.publish("PoolAndSpray/Pool/Filtration/NiveauLiquide", textBuffer);
 
-  client.publish("PoolAndSpray/Pool/Filtration/Ampere", "0");
+  mqttClient.publish("PoolAndSpray/Pool/Filtration/Ampere", "0");
 
   dtostrf(filterPressure, 3, 1, floatTextBuffer);
   sprintf(textBuffer, "%s", floatTextBuffer);
-  client.publish("PoolAndSpray/Pool/FiltreASable/Pression", textBuffer);
+  mqttClient.publish("PoolAndSpray/Pool/FiltreASable/Pression", textBuffer);
   
 
   int val = digitalRead(RELAY_1);
-  client.publish("PoolAndSpray/Pool/Filtration/Pompe", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Pool/Filtration/Pompe", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_2);
-  client.publish("PoolAndSpray/Pool/ProjecteurLED/Actif", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Pool/ProjecteurLED/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_3);
-  client.publish("PoolAndSpray/Arrosage/Zone1/Actif", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Arrosage/Zone1/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_4);
-  client.publish("PoolAndSpray/Arrosage/Zone2/Actif", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Arrosage/Zone2/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_5);
-  client.publish("PoolAndSpray/Arrosage/Zone3/Actif", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Arrosage/Zone3/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_6);
-  client.publish("PoolAndSpray/Arrosage/Zone4/Actif", (val==LOW)?"1":"0");
+  mqttClient.publish("PoolAndSpray/Arrosage/Zone4/Actif", (val==LOW)?"1":"0");
 
   switch (rainSensorValue) 
   {
   case 0:    // Sensor getting wet
-    client.publish("PoolAndSpray/Arrosage/Pluie/EtatSenseur", "1");
+    mqttClient.publish("PoolAndSpray/Arrosage/Pluie/EtatSenseur", "1");
     break;
   case 1:    // Sensor getting wet
-    //client.publish("PoolAndSpray/Arrosagey/Pluie/EtatSenseur", "QUELQUES GOUTTES");
+    //mqttClient.publish("PoolAndSpray/Arrosagey/Pluie/EtatSenseur", "QUELQUES GOUTTES");
     break;
   case 2:    
-    client.publish("PoolAndSpray/Arrosage/Pluie/EtatSenseur", "0");
+    mqttClient.publish("PoolAndSpray/Arrosage/Pluie/EtatSenseur", "0");
     break;
 
   }
@@ -696,26 +743,13 @@ void CallbackMQTT(char*        topic,
                   byte*        payload,
                   unsigned int length)
 {
-  
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("]=\"");
-  for (int i=0;i<length;i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.print("\"");
-  Serial.println();
-
   char payloadStr[length+1];
   for (int i=0;i<length;i++) {
     payloadStr[i]=(char)payload[i];
   }
   payloadStr[length]='\0';
-   
-  Serial.print("\"");
-  Serial.print(payloadStr);
-  Serial.print("\"\n");
-    
+  sprintf(textBuffer, "Message arrived [%s]=\"%s\"", topic, payloadStr);
+  
   // interpretation des commandes
   if ( strcmp(topic , "PoolAndSpray/Relais/Activer") == 0 )
   {
@@ -742,16 +776,14 @@ void nameFound(const char* name, const byte ipAddr[4]);
 
 void setup()
 {
+  //Configuration Serie
   Serial.begin(57600);
+  
+  // Configuration Ethernet
+  Ethernet.begin(mac, ip, gateway, subnet);
 
-  LogConsole("\n[Module_piscine]\n");
-  LogConsole(textBuffer);
-  LogConsole("\n");
-
-  // give the Ethernet shield a second to initialize:
-  Serial.println("waiting ethernet shield initialisation...");
-  delay(5000);
-  Serial.println("OK.");
+  // Configuration UDP
+  UdpSocketLog.begin(UdpPortListen);
  
   // Initialisation du watchdog
   MCUSR  &= ~_BV(WDRF);             // clear the reset bit
@@ -759,9 +791,6 @@ void setup()
   WDTCSR = 0;
 
   pinMode(FLOATLEVELPIN, INPUT);  
-
-  // Configuration Ethernet
-  Ethernet.begin(mac, ip, gateway, subnet);
 
   // Initialize the Bonjour/MDNS library. You can now reach or ping this
   // Arduino via the host name "arduino.local", provided that your operating
@@ -786,14 +815,6 @@ void setup()
 
 
   delay(1000);
-  
-  // Initialisation du capteur de température de l'eau
-  InitializeWaterTemperatureSensor();
-
-  InitializeRelays();
-
-  // Activation d'un watchdog à 8 sec
-  wdt_enable(WDTO_8S);
 }
 
 
@@ -805,152 +826,179 @@ void setup()
 unsigned long lastReadingTime = 0;
 time_t prevDisplay = 0;
 unsigned long lastReconnectAttempt = 0;
+bool firstLoop = true;
 
 void loop()
 {
-  if (remoteJeedomIp == IPAddress(0,0,0,0) )
+  if ( firstLoop == true )
   {
-    if (EthernetBonjour.isResolvingName()== false) 
-    {
-      Serial.print("Resolving '");
-      Serial.print("ibibahjeedom");
-      Serial.println("' via Multicast DNS (Bonjour)...");
-      Display(-2);
-      lcd.setCursor(0, 0);
-      lcd.print("jeedom ip :     ");
-      lcd.setCursor(0, 1);
-      lcd.print("     ...        ");
-      
-      // Now we tell the Bonjour library to resolve the host name. We give it a
-      // timeout of 5 seconds (e.g. 5000 milliseconds) to find an answer. The
-      // library will automatically resend the query every second until it
-      // either receives an answer or your timeout is reached - In either case,
-      // the callback function you specified in setup() will be called.
+    sprintf(textBuffer, "Version : %s\n", version);
+    LogConsole("\n[Module_piscine]\n");
+    LogConsole(textBuffer);
+    LogConsole("\n");
+  
+    // give the Ethernet shield a second to initialize:
+    LogConsole("waiting 5s ethernet shield initialisation...\n");
+    delay(5000);
+    LogConsole("waiting 5s OK.\n");    
+    
+    // Initialisation du capteur de température de l'eau
+    InitializeWaterTemperatureSensor();
+  
+    InitializeRelays();
+  
+    // Activation d'un watchdog à 8 sec
+    wdt_enable(WDTO_8S); 
 
-      EthernetBonjour.resolveName("ibibahjeedom", 5000);
-    }    
+    firstLoop = false;
   }
   else
   {
-    time_t        nowSec      = now();
-    unsigned long nowMillisec = millis();
+    // Lecture des possibles ordres sur la socket UDP
+    ReadUdpSocket();
   
-    // Gestion de la connexion MQTT
-    if ( !client.connected() )
+    if (remoteJeedomIp == IPAddress(0,0,0,0) )
     {
-      if ( nowMillisec - lastReconnectAttempt > 5000 )
+      if (EthernetBonjour.isResolvingName()== false) 
       {
-        lastReconnectAttempt = nowMillisec;
-        // Attempt to reconnect
-        if ( ReconnectMQTT() )
-        {
-          lastReconnectAttempt = 0;
-        }
-      }
+        LogConsole("Resolving 'ibibahjeedom' via Multicast DNS (Bonjour)...\n");
+        Display(-2);
+        lcd.setCursor(0, 0);
+        lcd.print("jeedom ip :     ");
+        lcd.setCursor(0, 1);
+        lcd.print("     ...        ");
+        
+        // Now we tell the Bonjour library to resolve the host name. We give it a
+        // timeout of 5 seconds (e.g. 5000 milliseconds) to find an answer. The
+        // library will automatically resend the query every second until it
+        // either receives an answer or your timeout is reached - In either case,
+        // the callback function you specified in setup() will be called.
+  
+        EthernetBonjour.resolveName("ibibahjeedom", 5000);
+      }    
     }
     else
     {
-      // Client connected
-      client.loop();
-    }
-  
-    // Test du clavier à chaque passage
-    int button = ReadKeyboardButton();
-    if ( button != NONE )
-    {
-      if ( button == SELECT )
+      time_t        nowSec      = now();
+      unsigned long nowMillisec = millis();
+    
+      // Gestion de la connexion MQTT
+      if ( !mqttClient.connected() )
       {
-        if (etatRelay1 == LOW) etatRelay1 = HIGH;
-        else if (etatRelay1 == HIGH) etatRelay1 = LOW;
-      }
-      else if ( button == LEFT )
-      {
-        if (etatRelay2 == LOW) etatRelay2 = HIGH;
-        else if (etatRelay2 == HIGH) etatRelay2 = LOW;
-      }
-      else if ( button == DOWN )
-      {
-        if (etatRelay3 == LOW) etatRelay3 = HIGH;
-        else if (etatRelay3 == HIGH) etatRelay3 = LOW;
-      }
-      else if ( button == UP )
-      {
-        if (etatRelay4 == LOW) etatRelay4 = HIGH;
-        else if (etatRelay4 == HIGH) etatRelay4 = LOW;
-      }
-      else if ( button == RIGHT )
-      {
-        if (etatRelay5 == LOW) etatRelay5 = HIGH;
-        else if (etatRelay5 == HIGH) etatRelay5 = LOW;
-      }
-    }
-  
-    // Etat des relays
-    digitalWrite(RELAY_1, etatRelay1);
-    digitalWrite(RELAY_2, etatRelay2);
-    digitalWrite(RELAY_3, etatRelay3);
-    digitalWrite(RELAY_4, etatRelay4);
-    digitalWrite(RELAY_5, etatRelay5);
-    digitalWrite(RELAY_6, etatRelay6);
-    digitalWrite(RELAY_7, etatRelay7);
-    digitalWrite(RELAY_8, etatRelay8);
-  
-    // Toutes les 2 secondes
-    if ( nowMillisec - lastReadingTime >= 2000 )
-    {
-      if ( button != NONE )
-      {
-        sprintf(textBuffer, "Touche Appuye = %d\n", button);
-        Serial.println(textBuffer);
-      }
-  
-      // Mise à jour de la température de l'eau
-      UpdateWaterTemperature();
-  
-      // Mise à jour de la température et de l'humidité du local
-      UpdateRoomTemperatureAndHumidity();
-  
-      // Mise à jour du pH
-      UpdatePH();
-  
-  //    // Mise à jour de l'ORP
-  //    UpdateORP();
-  
-      // Mise à jour de la pression du filtre à sable
-      UpdateFilterPressure();
-  
-      // Mise à jour de la détection de pluie 
-      UpdateRainDropDetection();
-  
-      // Mise à jour du niveau liquide
-      UpdateLiquidLevel();
-      
-      // Affichage des valeurs si on est sur l'écran d'affichage
-      if ( currentScreen == VALUES_SCREEN )
-      {
-        UpdateCurrentDisplay();
+        if ( nowMillisec - lastReconnectAttempt > 5000 )
+        {
+          lastReconnectAttempt = nowMillisec;
+          // Attempt to reconnect
+          if ( ReconnectMQTT() )
+          {
+            lastReconnectAttempt = 0;
+          }
+        }
       }
       else
       {
-        Display(VALUES_SCREEN);
+        // Client connected
+        mqttClient.loop();
       }
-  
-      // Mis à jour des topic MQTT
-      UpdateMQTT();
-  
-      lastReadingTime = nowMillisec;
+    
+      // Test du clavier à chaque passage
+      int button = ReadKeyboardButton();
+      if ( button != NONE )
+      {
+        if ( button == SELECT )
+        {
+          if (etatRelay1 == LOW) etatRelay1 = HIGH;
+          else if (etatRelay1 == HIGH) etatRelay1 = LOW;
+        }
+        else if ( button == LEFT )
+        {
+          if (etatRelay2 == LOW) etatRelay2 = HIGH;
+          else if (etatRelay2 == HIGH) etatRelay2 = LOW;
+        }
+        else if ( button == DOWN )
+        {
+          if (etatRelay3 == LOW) etatRelay3 = HIGH;
+          else if (etatRelay3 == HIGH) etatRelay3 = LOW;
+        }
+        else if ( button == UP )
+        {
+          if (etatRelay4 == LOW) etatRelay4 = HIGH;
+          else if (etatRelay4 == HIGH) etatRelay4 = LOW;
+        }
+        else if ( button == RIGHT )
+        {
+          if (etatRelay5 == LOW) etatRelay5 = HIGH;
+          else if (etatRelay5 == HIGH) etatRelay5 = LOW;
+        }
+      }
+    
+      // Etat des relays
+      digitalWrite(RELAY_1, etatRelay1);
+      digitalWrite(RELAY_2, etatRelay2);
+      digitalWrite(RELAY_3, etatRelay3);
+      digitalWrite(RELAY_4, etatRelay4);
+      digitalWrite(RELAY_5, etatRelay5);
+      digitalWrite(RELAY_6, etatRelay6);
+      digitalWrite(RELAY_7, etatRelay7);
+      digitalWrite(RELAY_8, etatRelay8);
+    
+      // Toutes les 2 secondes
+      if ( nowMillisec - lastReadingTime >= 2000 )
+      {
+        if ( button != NONE )
+        {
+          sprintf(textBuffer, "Touche Appuye = %d\n", button);
+          LogConsole(textBuffer);
+        }
+    
+        // Mise à jour de la température de l'eau
+        UpdateWaterTemperature();
+    
+        // Mise à jour de la température et de l'humidité du local
+        UpdateRoomTemperatureAndHumidity();
+    
+        // Mise à jour du pH
+        UpdatePH();
+    
+    //    // Mise à jour de l'ORP
+    //    UpdateORP();
+    
+        // Mise à jour de la pression du filtre à sable
+        UpdateFilterPressure();
+    
+        // Mise à jour de la détection de pluie 
+        UpdateRainDropDetection();
+    
+        // Mise à jour du niveau liquide
+        UpdateLiquidLevel();
+        
+        // Affichage des valeurs si on est sur l'écran d'affichage
+        if ( currentScreen == VALUES_SCREEN )
+        {
+          UpdateCurrentDisplay();
+        }
+        else
+        {
+          Display(VALUES_SCREEN);
+        }
+    
+        // Mis à jour des topic MQTT
+        UpdateMQTT();
+    
+        lastReadingTime = nowMillisec;
+      }
     }
+  
+    // Traitement des autres messages réseau (i.e. ping, ...)
+    Ethernet.maintain();
+  
+    // This actually runs the Bonjour module. YOU HAVE TO CALL THIS PERIODICALLY,
+    // OR NOTHING WILL WORK! Preferably, call it once per loop().
+    EthernetBonjour.run();
+  
+    // Reset du watchdog
+    wdt_reset();
   }
-
-  // Traitement des autres messages réseau (i.e. ping, ...)
-  Ethernet.maintain();
-
-  // This actually runs the Bonjour module. YOU HAVE TO CALL THIS PERIODICALLY,
-  // OR NOTHING WILL WORK! Preferably, call it once per loop().
-  EthernetBonjour.run();
-
-  // Reset du watchdog
-  wdt_reset();
 }
 
 // This function is called when a name is resolved via MDNS/Bonjour. We set
@@ -961,11 +1009,10 @@ void loop()
 // the name resolution timed out).
 void nameFound(const char* name, const byte ipAddr[4])
 {
-  if (NULL != ipAddr) {
-    Serial.print("The IP address for '");
-    Serial.print(name);
-    Serial.print("' is ");
-    Serial.println(ip_to_str(ipAddr));
+  if (NULL != ipAddr) 
+  {
+    sprintf(textBuffer, "The IP address for '%s' is '%s'\n", name, ip_to_str(ipAddr) );
+    LogConsole(textBuffer);
     Display(-3);
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -975,28 +1022,19 @@ void nameFound(const char* name, const byte ipAddr[4])
     
     remoteJeedomIp = IPAddress(ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
 
-    client.setCallback(CallbackMQTT);
-    client.setServer(remoteJeedomIp, MQTTBrokerPort);
+    mqttClient.setCallback(CallbackMQTT);
+    mqttClient.setServer(remoteJeedomIp, MQTTBrokerPort);
   } 
   else 
   {
-    Serial.print("Resolving '");
-    Serial.print(name);
-    Serial.println("' timed out.");
+    sprintf(textBuffer, "Resolving '%s' time out.\n", name);
+    LogConsole(textBuffer);
     Display(-4);
     lcd.setCursor(0, 0);
     lcd.print("jeedom ip :     ");
     lcd.setCursor(0, 1);
     lcd.print("  timed out     ");  
   }
-}
-
-// This is just a little utility function to format an IP address as a string.
-const char* ip_to_str(const uint8_t* ipAddr)
-{
-  static char buf[16];
-  sprintf(buf, "%d.%d.%d.%d\0", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
-  return buf;
 }
 
 

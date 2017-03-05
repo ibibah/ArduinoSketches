@@ -82,3 +82,13 @@ char* ftoa(char* a, double f, int precision)
  itoa(desimal, a, 10);
  return ret;
 }
+
+///////////////// TRANSFORMATION IP TO STRING///////////////////////////////
+// This is just a little utility function to format an IP address as a string.
+///////////////////////////////////////////////////////////////////////////
+const char* ip_to_str(const uint8_t* ipAddr)
+{
+  static char buf[16];
+  sprintf(buf, "%d.%d.%d.%d\0", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
+  return buf;
+}
