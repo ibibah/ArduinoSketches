@@ -1,22 +1,7 @@
-/*
-  Telnet client
 
- This sketch connects to a a telnet server (http://www.google.com)
- using an Arduino Wiznet Ethernet shield.  You'll need a telnet server
- to test this with.
- Processing's ChatServer example (part of the network library) works well,
- running on port 10002. It can be found as part of the examples
- in the Processing application, available at
- http://processing.org/
-
- Circuit:
- * Ethernet shield attached to pins 10, 11, 12, 13
-
- created 14 Sep 2010
- modified 9 Apr 2012
- by Tom Igoe
-
- */
+//
+// Module de transmission UDP de teleinfo
+// Modifié le 05/03/2011 Version 1 : nettoyage
 
 #include <SPI.h>
 #include <Ethernet.h>
@@ -33,13 +18,9 @@ byte mac[] =
 IPAddress ip(192, 168, 10, 251);
 IPAddress gateway(192, 168, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
-unsigned int localPort = 2200;      // local port to listen on
 
-IPAddress broadcastIp(192, 168, 10, 255);
+unsigned int udpPort = 2200;      // port to listen an to send on jeedom 
 IPAddress remoteJeedomIp(0, 0, 0, 0);
-// buffers for receiving and sending data
-char packetBuffer[UDP_TX_PACKET_MAX_SIZE]; //buffer to hold incoming packet,
-char  ReplyBuffer[] = "acknowledged";       // a string to send back
 
 SoftwareSerial teleinfo(2, 3);
 
@@ -62,7 +43,7 @@ void setup()
   
   // start the Ethernet connection:
   Ethernet.begin(mac, ip, gateway, subnet);
-  Udp.begin(localPort);
+  Udp.begin(udpPort);
 
   // Initialize the Bonjour/MDNS library. You can now reach or ping this
   // Arduino via the host name "arduino.local", provided that your operating
@@ -103,7 +84,7 @@ void loop()
     {
       char inChar = teleinfo.read() & 0x7F;
       // send a reply, to the IP address and port that sent us the packet we received
-      Udp.beginPacket(remoteJeedomIp, localPort);
+      Udp.beginPacket(remoteJeedomIp, udpPort);
       Udp.write(inChar);
       Udp.endPacket();
       Serial.print(inChar);
