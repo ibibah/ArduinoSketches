@@ -7,6 +7,7 @@
 // Modifié le 12/12/2016 Version 1.3 : suppression du code NTP
 // Modifié le 05/03/2017 Version 1.4 : création Utils.h + bascule relais sur appuie bouton ( rester sur DHT 1.2.3, pas 1.3.0(compile pas))
 // Modifié le 05/03/2017 Version 1.5 : transmission UDP BROADCAST 2300 du log + commande UDP "reset"
+// Modifié le 05/03/2017 Version 1.6 : softwareReboot si ibibahjeedom non trouvé
 
 #include "Utils.h"
 #include <avr/wdt.h>
@@ -19,7 +20,7 @@
 #include <LiquidCrystal.h>
 #include <EthernetBonjour.h>    // https://github.com/TrippyLighting/EthernetBonjour
 
-const char* version = "1.5";
+const char* version = "1.6";
 
 // variables de travail
 char textBuffer[256];
@@ -1027,13 +1028,7 @@ void nameFound(const char* name, const byte ipAddr[4])
   } 
   else 
   {
-    sprintf(textBuffer, "Resolving '%s' time out.\n", name);
-    LogConsole(textBuffer);
-    Display(-4);
-    lcd.setCursor(0, 0);
-    lcd.print("jeedom ip :     ");
-    lcd.setCursor(0, 1);
-    lcd.print("  timed out     ");  
+    software_Reboot();
   }
 }
 
