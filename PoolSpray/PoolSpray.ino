@@ -4,19 +4,20 @@
 //
 // Module de gestion de piscine
 // Modifié le 14/10/2016 Version 1.2 : suppression synchro NTP affichage T? T= pour connexion MQTT
-// Modifié le 12/12/2016 Version 1.3 : suppression du code NTP + utilisation EthernetBonjour
+// Modifié le 12/12/2016 Version 1.3 : suppression du code NTP
+// Modifié le 05/03/2017 Version 1.4 : création Utils.h + bascule relais sur appuie bouton ( rester sur DHT 1.2.3, pas 1.3.0(compile pas))
 
+#include "Utils.h"
 #include <avr/wdt.h>
 #include <Ethernet.h>
 #include <Time.h>
-#include <Timezone.h>
 #include <PubSubClient.h>
 #include <OneWire.h>
 #include <DHT.h>
 #include <LiquidCrystal.h>
 #include <EthernetBonjour.h>    // https://github.com/TrippyLighting/EthernetBonjour
 
-const char* version = "1.3";
+const char* version = "1.4";
 
 // variables de travail
 char textBuffer[256];
@@ -38,75 +39,6 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress remoteJeedomIp(0, 0, 0, 0); // resolu par dns avec ibibahjeedom.local
 const unsigned int MQTTBrokerPort = 1883;
 
-// -------------------------------------------------------------------------------------
-// FONCTIONS UTILITAIRES POUR L'AFFICHAGE DE CARACTERES ACCENTUES SUR LA CONSOLE
-// -------------------------------------------------------------------------------------
-
-
-
-// ****** UTF8-Decoder: convert UTF8-string to extended ASCII *******
-static byte c1;  // Last character buffer
-
-// Convert a single Character from UTF8 to Extended ASCII
-// Return "0" if a byte has to be ignored
-byte utf8ascii(byte ascii) 
-{
-  if ( ascii < 128 )   // Standard ASCII-set 0..0x7F handling  
-  {   
-    c1 = 0;
-    return ascii;
-  }
-
-  // get previous input
-  byte last = c1;   // get last char
-  c1 = ascii;         // remember actual character
-
-  switch ( last )     // conversion depnding on first UTF8-character
-  {  
-  case 0xC2: 
-    return  ascii; 
-    break;
-  case 0xC3: 
-    return  (ascii | 0xC0);  
-    break;
-  case 0x82: 
-    if ( ascii == 0xAC ) 
-    return 0x80;       // special case Euro-symbol
-  }
-
-  // otherwise: return zero, if character has to be ignored
-  return 0;                                     
-}
-
-
-// convert String object from UTF8 String to Extended ASCII
-String utf8ascii(String s)
-{      
-  String r = "";
-  char   c;
-  for ( int i=0; i<s.length(); i++ )
-  {
-    c = utf8ascii(s.charAt(i));
-    if ( c != 0 ) 
-      r += c;
-  }
-  return r;
-}
-
-
-// In Place conversion UTF8-string to Extended ASCII (ASCII is shorter!)
-void utf8ascii(char* s)
-{      
-  int  k = 0;
-  char c;
-  for ( int i=0; i<strlen(s); i++ )
-  {
-    c = utf8ascii(s[i]);
-    if ( c != 0 )
-      s[k++] = c;
-  }
-  s[k] = 0;
-}
 
 
 void LogConsole(char* s)
@@ -115,21 +47,6 @@ void LogConsole(char* s)
   Serial.print(s);
 }
 
-
-char* ftoa(char* a, double f, int precision)
-{
-  long p[] = {0,10,100,1000,10000,100000,1000000,10000000,100000000};
- 
-  char* ret = a;
-  long heiltal = (long)f;
-  itoa(heiltal, a, 10);
-  while ( *a != '\0' ) 
-    a++;
- *a++ = '.';
- long desimal = abs((long)((f - heiltal) * p[precision]));
- itoa(desimal, a, 10);
- return ret;
-}
 
 // -------------------------------------------------------------------------------------
 // GESTION MQTT
@@ -144,10 +61,12 @@ boolean ReconnectMQTT()
 {
   // Connexion au broker MQTT
   LogConsole("Connexion au broker MQTT\n");
-  if ( client.connect("Pool&Spray") )
+  if ( client.connect("PoolAndSpray") )
   {
     LogConsole("Connecté au broker MQTT\n");
- 
+    
+    client.publish("PoolAndSpray/Message","Connecte au broker MQTT");
+    
     // ... and resubscribe
     client.subscribe("PoolAndSpray/Relais/Activer");
   }
@@ -941,23 +860,28 @@ void loop()
     {
       if ( button == SELECT )
       {
-        etatRelay1 = LOW;
+        if (etatRelay1 == LOW) etatRelay1 = HIGH;
+        else if (etatRelay1 == HIGH) etatRelay1 = LOW;
       }
       else if ( button == LEFT )
       {
-        etatRelay2 = LOW;
+        if (etatRelay2 == LOW) etatRelay2 = HIGH;
+        else if (etatRelay2 == HIGH) etatRelay2 = LOW;
       }
       else if ( button == DOWN )
       {
-        etatRelay3 = LOW;
+        if (etatRelay3 == LOW) etatRelay3 = HIGH;
+        else if (etatRelay3 == HIGH) etatRelay3 = LOW;
       }
       else if ( button == UP )
       {
-        etatRelay4 = LOW;
+        if (etatRelay4 == LOW) etatRelay4 = HIGH;
+        else if (etatRelay4 == HIGH) etatRelay4 = LOW;
       }
       else if ( button == RIGHT )
       {
-        etatRelay5 = LOW;
+        if (etatRelay5 == LOW) etatRelay5 = HIGH;
+        else if (etatRelay5 == HIGH) etatRelay5 = LOW;
       }
     }
   
