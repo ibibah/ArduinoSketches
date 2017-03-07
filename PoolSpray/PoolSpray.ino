@@ -8,6 +8,7 @@
 // Modifié le 05/03/2017 Version 1.4 : création Utils.h + bascule relais sur appuie bouton ( rester sur DHT 1.2.3, pas 1.3.0(compile pas))
 // Modifié le 05/03/2017 Version 1.5 : transmission UDP BROADCAST 2300 du log + commande UDP "reset"
 // Modifié le 05/03/2017 Version 1.6 : softwareReboot si ibibahjeedom non trouvé
+// Modifié le 05/03/2017 Version 1.7 : mis à jour toutes les 10 secondes au lieu de 2
 
 #include "Utils.h"
 #include <avr/wdt.h>
@@ -20,7 +21,7 @@
 #include <LiquidCrystal.h>
 #include <EthernetBonjour.h>    // https://github.com/TrippyLighting/EthernetBonjour
 
-const char* version = "1.6";
+const char* version = "1.7";
 
 // variables de travail
 char textBuffer[256];
@@ -943,8 +944,8 @@ void loop()
       digitalWrite(RELAY_7, etatRelay7);
       digitalWrite(RELAY_8, etatRelay8);
     
-      // Toutes les 2 secondes
-      if ( nowMillisec - lastReadingTime >= 2000 )
+      // Toutes les 10 secondes
+      if ( nowMillisec - lastReadingTime >= 10000 )
       {
         if ( button != NONE )
         {
