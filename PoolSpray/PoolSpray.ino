@@ -1,6 +1,3 @@
-#include <Time.h>
-#include <TimeLib.h>
-
 //
 // Module de gestion de piscine
 // Modifié le 14/10/2016 Version 1.2 : suppression synchro NTP affichage T? T= pour connexion MQTT
@@ -9,19 +6,35 @@
 // Modifié le 05/03/2017 Version 1.5 : transmission UDP BROADCAST 2300 du log + commande UDP "reset"
 // Modifié le 05/03/2017 Version 1.6 : softwareReboot si ibibahjeedom non trouvé
 // Modifié le 05/03/2017 Version 1.7 : mis à jour toutes les 10 secondes au lieu de 2
+// Modifié le 30/11/2017 Version 1.8 : ajout bootloader ariadne (https://github.com/loathingKernel/ariadne-bootloader compatible w5500)
+//                                     suppression watchdog
+//                                     suppression EthernetBonjour
+//                                     ajout UDPLogReset ( Ethernet est initialisé par lui avec les infos EEPROM )
 
+/*
+Using library Time at version 1.5 in folder: D:\Arduino\arduino_ide_croquis\libraries\Time 
+Using library pubsubclient-2.6 at version 2.6 in folder: D:\Arduino\arduino_ide_croquis\libraries\pubsubclient-2.6 
+Using library OneWire at version 2.3.3 in folder: D:\Arduino\arduino_ide_croquis\libraries\OneWire 
+Using library DHT_sensor_library at version 1.3.0 in folder: D:\Arduino\arduino_ide_croquis\libraries\DHT_sensor_library 
+Using library LiquidCrystal at version 1.0.7 in folder: D:\Arduino\arduino_ide_croquis\libraries\LiquidCrystal 
+Using library NewEEPROM in folder: D:\Arduino\arduino_ide_croquis\libraries\NewEEPROM (legacy)
+Using library NetEEPROM at version 1.0.0 in folder: D:\Arduino\arduino_ide_croquis\libraries\NetEEPROM 
+Using library SPI at version 1.0 in folder: C:\Users\wal\AppData\Local\Arduino15\packages\arduino\hardware\avr\1.6.20\libraries\SPI 
+Using library Ethernet2 at version 1.0.4 in folder: D:\Arduino\arduino_ide_croquis\libraries\Ethernet2 
+Using library Adafruit_Unified_Sensor at version 1.0.2 in folder: D:\Arduino\arduino_ide_croquis\libraries\Adafruit_Unified_Sensor
+*/
+
+#include <TimeLib.h>
 #include "Utils.h"
 #include <avr/wdt.h>
-#include <Ethernet.h>
-#include <EthernetUdp.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
 #include <Time.h>
 #include <PubSubClient.h>
 #include <OneWire.h>
 #include <DHT.h>
 #include <LiquidCrystal.h>
-#include <EthernetBonjour.h>    // https://github.com/TrippyLighting/EthernetBonjour
+#include "UDPLogReset.h"   
 
-const char* version = "1.7";
+const char* version = "1.8";
 
 // variables de travail
 char textBuffer[256];
@@ -30,72 +43,40 @@ char floatTextBuffer[20];
 // -------------------------------------------------------------------------------------
 // CONFIGURATION RESEAU
 // -------------------------------------------------------------------------------------
+// la configuration réseau se trouve dans l'EEPROM deuis la mise en place 
+// du bootloader ariadne
+// ces valeurs servent pour le BootLoader et pour UDPLogReset
+// voici les valeurs mis dans l'EEPROM
+// IP  : 192.168.10.250
+// mac : { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
+// GW  : gateway(192, 168, 10, 1);
+// subnet(255, 255, 255, 0);
 
-byte   mac[] = { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
-IPAddress ip(192, 168, 10, 250);
-IPAddress gateway(192, 168, 10, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress broadcastIp(192, 168, 10, 255);
-
-// An EthernetUDP instance to let us send and receive packets over UDP
-EthernetUDP UdpSocketLog;
-unsigned int UdpPortListen = 2301;                // local udp port to listen on and to send to
-unsigned int UdpPortSend   = 2300;                // local udp port to listen on and to send to
-// buffers for receiving and sending data
-char packetBuffer[UDP_TX_PACKET_MAX_SIZE];  //buffer to hold incoming packet,
-
+/* Create the reset server. This way your reser server will be at the port you
+ * have speciefied in the bootloader for remote uploading. For more information on that
+ * look at the "NetEEPROM" library in the "WriteNetworkSettings" sketch.
+ * If you want to use your own port, create the object as this
+ * "EthernetReset reset(reset_path, port);" where port is a number, i.e. 81
+ * Pour effectuer un reset :
+ * echo "reset" | nc -q1 -u 192.168.10.250 2301
+ * Pour effectuer un reset en invalidant le sketch :
+ * echo "reprogram" | nc -q1 -u 192.168.10.250 2301
+*/
+UDPLogReset logreset(2301,"192.168.10.255", 2300);
 // -------------------------------------------------------------------------------------
 // CONFIGURATION MQTT
 // -------------------------------------------------------------------------------------
 
-IPAddress remoteJeedomIp(0, 0, 0, 0); // resolu par dns avec ibibahjeedom.local
+IPAddress remoteJeedomIp(192,168,10,50); 
 const unsigned int MQTTBrokerPort = 1883;
-
-void software_Reboot()
-{
-  wdt_enable(WDTO_15MS);
-
-  while(1)
-  {
-
-  }
-}
 
 void LogConsole(char* s)
 {
   utf8ascii(s);
 
-  if( UdpSocketLog.beginPacket(broadcastIp, UdpPortSend) )
-  {
-    UdpSocketLog.write(s);
-    UdpSocketLog.endPacket();
-  }
-  
-  Serial.print(s);
+  logreset.log(s);
 }
 
-void ReadUdpSocket()
-{
-  // if there's data available, read a packet
-  int packetSize = UdpSocketLog.parsePacket();
-  if (packetSize) 
-  {
-    //IPAddress remote = Udp.remoteIP();
-    //Udp.remotePort()
-
-    // read the packet into packetBufffer
-    UdpSocketLog.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
-
-    sprintf(textBuffer, "Recu udp : '%s'\n", packetBuffer);
-    LogConsole(textBuffer);
-    // On compare les 5 premieres caractères pour ne pas se préoccuper du '\n'
-    if ( strncmp( packetBuffer , "reset", 5 ) == 0 )
-    {
-      LogConsole("software_Reboot PoolAndSpray ...\n");
-      software_Reboot();
-    }
-  }
-}
 
 // -------------------------------------------------------------------------------------
 // GESTION MQTT
@@ -769,9 +750,6 @@ void CallbackMQTT(char*        topic,
   }
 }
 
-const char* ip_to_str(const uint8_t*);
-void nameFound(const char* name, const byte ipAddr[4]);
-
 // -------------------------------------------------------------------------------------
 // FONCTION D'INITIALISATION
 // -------------------------------------------------------------------------------------
@@ -779,32 +757,31 @@ void nameFound(const char* name, const byte ipAddr[4]);
 void setup()
 {
   //Configuration Serie
-  Serial.begin(57600);
+  Serial.begin(9600);
   
   // Configuration Ethernet
-  Ethernet.begin(mac, ip, gateway, subnet);
-
-  // Configuration UDP
-  UdpSocketLog.begin(UdpPortListen);
+  //Ethernet.begin(mac, ip, gateway, subnet);
+  
+  // l'objet reset initialise Ethernet avec les valeur de l'EEPROM
+  // current value:
+  // IP  : 192.168.10.250
+  // mac : { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
+  // GW  : gateway(192, 168, 10, 1);
+  // subnet(255, 255, 255, 0);
+  // path (password) : ariadne (http://192.168.10.250:8080/ariadne/reset|program
+   /* For now the Arduino EthShield and the server are being configured using the
+   * settings already stored in the EEPROM and are the same with the ones for Ariadne bootloader.
+   * This means that you *MUST* have updated the network settings on your Arduino with the
+   * "WriteNetworkSettings" sketch.
+   * The "begin()" command takes care of everything, from initializing the EthShield to
+   * starting the web server for resetting. This is why you should always start it before any other
+   * server you might want to have */
+  logreset.begin();
  
-  // Initialisation du watchdog
-  MCUSR  &= ~_BV(WDRF);             // clear the reset bit
-  WDTCSR |=  _BV(WDCE) | _BV(WDE);  // disable the WDT
-  WDTCSR = 0;
-
   pinMode(FLOATLEVELPIN, INPUT);  
 
-  // Initialize the Bonjour/MDNS library. You can now reach or ping this
-  // Arduino via the host name "arduino.local", provided that your operating
-  // system is Bonjour-enabled (such as MacOS X).
-  // Always call this before any other method!
-  EthernetBonjour.begin("ibibahpoolspray");
-
-  // We specify the function that the Bonjour library will call when it
-  // resolves a host name. In this case, we will call the function named
-  // "nameFound".
-  EthernetBonjour.setNameResolvedCallback(nameFound);
-
+  mqttClient.setCallback(CallbackMQTT);
+  mqttClient.setServer(remoteJeedomIp, MQTTBrokerPort);
 
   // Initialisation du LCD
   lcd.begin(16, 2);
@@ -815,8 +792,8 @@ void setup()
   sprintf(textBuffer, "Version : %s", version);
   lcd.print(textBuffer);
 
-
-  delay(1000);
+  // pour prmettre de voir la version
+  delay(500);
 }
 
 
@@ -838,199 +815,130 @@ void loop()
     LogConsole("\n[Module_piscine]\n");
     LogConsole(textBuffer);
     LogConsole("\n");
-  
-    // give the Ethernet shield a second to initialize:
-    LogConsole("waiting 5s ethernet shield initialisation...\n");
-    delay(5000);
-    LogConsole("waiting 5s OK.\n");    
     
     // Initialisation du capteur de température de l'eau
     InitializeWaterTemperatureSensor();
   
     InitializeRelays();
-  
-    // Activation d'un watchdog à 8 sec
-    wdt_enable(WDTO_8S); 
 
     firstLoop = false;
   }
   else
   {
-    // Lecture des possibles ordres sur la socket UDP
-    ReadUdpSocket();
+    time_t        nowSec      = now();
+    unsigned long nowMillisec = millis();
   
-    if (remoteJeedomIp == IPAddress(0,0,0,0) )
+    // Gestion de la connexion MQTT
+    if ( !mqttClient.connected() )
     {
-      if (EthernetBonjour.isResolvingName()== false) 
+      if ( nowMillisec - lastReconnectAttempt > 5000 )
       {
-        LogConsole("Resolving 'ibibahjeedom' via Multicast DNS (Bonjour)...\n");
-        Display(-2);
-        lcd.setCursor(0, 0);
-        lcd.print("jeedom ip :     ");
-        lcd.setCursor(0, 1);
-        lcd.print("     ...        ");
-        
-        // Now we tell the Bonjour library to resolve the host name. We give it a
-        // timeout of 5 seconds (e.g. 5000 milliseconds) to find an answer. The
-        // library will automatically resend the query every second until it
-        // either receives an answer or your timeout is reached - In either case,
-        // the callback function you specified in setup() will be called.
-  
-        EthernetBonjour.resolveName("ibibahjeedom", 5000);
-      }    
+        lastReconnectAttempt = nowMillisec;
+        // Attempt to reconnect
+        if ( ReconnectMQTT() )
+        {
+          lastReconnectAttempt = 0;
+        }
+      }
     }
     else
     {
-      time_t        nowSec      = now();
-      unsigned long nowMillisec = millis();
-    
-      // Gestion de la connexion MQTT
-      if ( !mqttClient.connected() )
+      // Client connected
+      mqttClient.loop();
+    }
+  
+    // Test du clavier à chaque passage
+    int button = ReadKeyboardButton();
+    if ( button != NONE )
+    {
+      if ( button == SELECT )
       {
-        if ( nowMillisec - lastReconnectAttempt > 5000 )
-        {
-          lastReconnectAttempt = nowMillisec;
-          // Attempt to reconnect
-          if ( ReconnectMQTT() )
-          {
-            lastReconnectAttempt = 0;
-          }
-        }
+        if (etatRelay1 == LOW) etatRelay1 = HIGH;
+        else if (etatRelay1 == HIGH) etatRelay1 = LOW;
       }
-      else
+      else if ( button == LEFT )
       {
-        // Client connected
-        mqttClient.loop();
+        if (etatRelay2 == LOW) etatRelay2 = HIGH;
+        else if (etatRelay2 == HIGH) etatRelay2 = LOW;
       }
-    
-      // Test du clavier à chaque passage
-      int button = ReadKeyboardButton();
-      if ( button != NONE )
+      else if ( button == DOWN )
       {
-        if ( button == SELECT )
-        {
-          if (etatRelay1 == LOW) etatRelay1 = HIGH;
-          else if (etatRelay1 == HIGH) etatRelay1 = LOW;
-        }
-        else if ( button == LEFT )
-        {
-          if (etatRelay2 == LOW) etatRelay2 = HIGH;
-          else if (etatRelay2 == HIGH) etatRelay2 = LOW;
-        }
-        else if ( button == DOWN )
-        {
-          if (etatRelay3 == LOW) etatRelay3 = HIGH;
-          else if (etatRelay3 == HIGH) etatRelay3 = LOW;
-        }
-        else if ( button == UP )
-        {
-          if (etatRelay4 == LOW) etatRelay4 = HIGH;
-          else if (etatRelay4 == HIGH) etatRelay4 = LOW;
-        }
-        else if ( button == RIGHT )
-        {
-          if (etatRelay5 == LOW) etatRelay5 = HIGH;
-          else if (etatRelay5 == HIGH) etatRelay5 = LOW;
-        }
+        if (etatRelay3 == LOW) etatRelay3 = HIGH;
+        else if (etatRelay3 == HIGH) etatRelay3 = LOW;
       }
-    
-      // Etat des relays
-      digitalWrite(RELAY_1, etatRelay1);
-      digitalWrite(RELAY_2, etatRelay2);
-      digitalWrite(RELAY_3, etatRelay3);
-      digitalWrite(RELAY_4, etatRelay4);
-      digitalWrite(RELAY_5, etatRelay5);
-      digitalWrite(RELAY_6, etatRelay6);
-      digitalWrite(RELAY_7, etatRelay7);
-      digitalWrite(RELAY_8, etatRelay8);
-    
-      // Toutes les 10 secondes
-      if ( nowMillisec - lastReadingTime >= 10000 )
+      else if ( button == UP )
       {
-        if ( button != NONE )
-        {
-          sprintf(textBuffer, "Touche Appuye = %d\n", button);
-          LogConsole(textBuffer);
-        }
-    
-        // Mise à jour de la température de l'eau
-        UpdateWaterTemperature();
-    
-        // Mise à jour de la température et de l'humidité du local
-        UpdateRoomTemperatureAndHumidity();
-    
-        // Mise à jour du pH
-        UpdatePH();
-    
-    //    // Mise à jour de l'ORP
-    //    UpdateORP();
-    
-        // Mise à jour de la pression du filtre à sable
-        UpdateFilterPressure();
-    
-        // Mise à jour de la détection de pluie 
-        UpdateRainDropDetection();
-    
-        // Mise à jour du niveau liquide
-        UpdateLiquidLevel();
-        
-        // Affichage des valeurs si on est sur l'écran d'affichage
-        if ( currentScreen == VALUES_SCREEN )
-        {
-          UpdateCurrentDisplay();
-        }
-        else
-        {
-          Display(VALUES_SCREEN);
-        }
-    
-        // Mis à jour des topic MQTT
-        UpdateMQTT();
-    
-        lastReadingTime = nowMillisec;
+        if (etatRelay4 == LOW) etatRelay4 = HIGH;
+        else if (etatRelay4 == HIGH) etatRelay4 = LOW;
+      }
+      else if ( button == RIGHT )
+      {
+        if (etatRelay5 == LOW) etatRelay5 = HIGH;
+        else if (etatRelay5 == HIGH) etatRelay5 = LOW;
       }
     }
   
-    // Traitement des autres messages réseau (i.e. ping, ...)
-    Ethernet.maintain();
+    // Etat des relays
+    digitalWrite(RELAY_1, etatRelay1);
+    digitalWrite(RELAY_2, etatRelay2);
+    digitalWrite(RELAY_3, etatRelay3);
+    digitalWrite(RELAY_4, etatRelay4);
+    digitalWrite(RELAY_5, etatRelay5);
+    digitalWrite(RELAY_6, etatRelay6);
+    digitalWrite(RELAY_7, etatRelay7);
+    digitalWrite(RELAY_8, etatRelay8);
   
-    // This actually runs the Bonjour module. YOU HAVE TO CALL THIS PERIODICALLY,
-    // OR NOTHING WILL WORK! Preferably, call it once per loop().
-    EthernetBonjour.run();
+    // Toutes les 10 secondes
+    if ( nowMillisec - lastReadingTime >= 10000 )
+    {
+      if ( button != NONE )
+      {
+        sprintf(textBuffer, "Touche Appuye = %d\n", button);
+        LogConsole(textBuffer);
+      }
   
-    // Reset du watchdog
-    wdt_reset();
+      // Mise à jour de la température de l'eau
+      UpdateWaterTemperature();
+  
+      // Mise à jour de la température et de l'humidité du local
+      UpdateRoomTemperatureAndHumidity();
+  
+      // Mise à jour du pH
+      UpdatePH();
+  
+  //    // Mise à jour de l'ORP
+  //    UpdateORP();
+  
+      // Mise à jour de la pression du filtre à sable
+      UpdateFilterPressure();
+  
+      // Mise à jour de la détection de pluie 
+      UpdateRainDropDetection();
+  
+      // Mise à jour du niveau liquide
+      UpdateLiquidLevel();
+      
+      // Affichage des valeurs si on est sur l'écran d'affichage
+      if ( currentScreen == VALUES_SCREEN )
+      {
+        UpdateCurrentDisplay();
+      }
+      else
+      {
+        Display(VALUES_SCREEN);
+      }
+  
+      // Mis à jour des topic MQTT
+      UpdateMQTT();
+  
+      lastReadingTime = nowMillisec;
+    }
   }
-}
 
-// This function is called when a name is resolved via MDNS/Bonjour. We set
-// this up in the setup() function above. The name you give to this callback
-// function does not matter at all, but it must take exactly these arguments
-// (a const char*, which is the hostName you wanted resolved, and a const
-// byte[4], which contains the IP address of the host on success, or NULL if
-// the name resolution timed out).
-void nameFound(const char* name, const byte ipAddr[4])
-{
-  if (NULL != ipAddr) 
-  {
-    sprintf(textBuffer, "The IP address for '%s' is '%s'\n", name, ip_to_str(ipAddr) );
-    LogConsole(textBuffer);
-    Display(-3);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("jeedom ip :     ");
-    lcd.setCursor(0, 1);
-    lcd.print(ip_to_str(ipAddr));  
-    
-    remoteJeedomIp = IPAddress(ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
-
-    mqttClient.setCallback(CallbackMQTT);
-    mqttClient.setServer(remoteJeedomIp, MQTTBrokerPort);
-  } 
-  else 
-  {
-    software_Reboot();
-  }
+   /* After the reset server is running the only thing needed is this command at the start of
+   * the "loop()" function in your sketch and it will take care of checking for any reset or
+   * reprogram requests */
+   logreset.check();
 }
 
 
