@@ -59,7 +59,7 @@ void UDPLogReset::check()
     m_udpSocket.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
 
     char textBuffer[UDP_TX_PACKET_MAX_SIZE];
-    sprintf(textBuffer, "UDPLogReset::check : Recu udp : '%s'\n", packetBuffer);
+    sprintf(textBuffer, "%s\n", packetBuffer);
     log(textBuffer);
 
     // On compare les 5 premieres caractères pour ne pas se préoccuper du '\n'
