@@ -5,11 +5,12 @@
 #include <avr/wdt.h>
 #include <string.h>
 #include <Arduino.h>
-#include <NewEEPROM.h>
 #include <NetEEPROM.h>
 #include <SPI.h>
-#include <Ethernet2.h>
-#include <EthernetUdp2.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
+//#include <Ethernet2.h>
+//#include <EthernetUdp2.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
+#include <Ethernet.h>
+#include <EthernetUdp.h>   
 
 #define pgm_uchar(name)   static const prog_uchar name[] PROGMEM
 
@@ -17,13 +18,14 @@
   Class UDPLogReset
 
   Configure Ethernet :
-  // utilise la configuration réseau se trouve dans l'EEPROM
+  // utilise la configuration rÃ©seau se trouve dans l'EEPROM
   // ces valeurs servent pour le BootLoader et pour UDPLogReset
   // voici les valeurs mis dans l'EEPROM
   // IP  : 192.168.10.250
   // mac : { 0xDE, 0xDA, 0xBE, 0xEF, 0xFE, 0xED };
   // GW  : gateway(192, 168, 10, 1);
   // subnet(255, 255, 255, 0);
+  // word port = 46970;
 
   Ecoute en UDP des commandes de reset sur le port listenPort
 
@@ -41,7 +43,7 @@ class UDPLogReset
         EthernetUDP  m_udpSocket;                           // An EthernetUDP instance to let us send and receive packets over UDP
         unsigned int m_udpPortListen;                       // local udp port to listen on and to send to
         unsigned int m_udpPortSend;                         // local udp port to listen on and to send to
-        IPAddress    m_broadcastIp;                              // ip log broadcast
+        IPAddress    m_broadcastIp;                         // ip log broadcast
 
     void stdResponce(char* msg);
     void watchdogReset();

@@ -59,24 +59,24 @@ void UDPLogReset::check()
     m_udpSocket.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
 
     char textBuffer[UDP_TX_PACKET_MAX_SIZE];
-    sprintf(textBuffer, "Recu udp : '%s'\n", packetBuffer);
+    sprintf(textBuffer, "UDPLogReset::check : Recu udp : '%s'\n", packetBuffer);
     log(textBuffer);
 
     // On compare les 5 premieres caractères pour ne pas se préoccuper du '\n'
     if ( strncmp( textBuffer , "reset", 5 ) == 0 )
     {
-      log("Arduino will be doing a normal reset in 2 seconds\n");
+      log("UDPLogReset::check : Arduino will be doing a normal reset in 2 seconds\n");
       watchdogReset();
     }
     else if ( strncmp( textBuffer , "reprogram", 5 ) == 0 )
     {
-      log("Arduino will reset for reprogramming in 2 seconds\n");
+      log("UDPLogReset::check : Arduino will reset for reprogramming in 2 seconds\n");
       NetEEPROM.writeImgBad();
       watchdogReset();
     }
     else
     {
-      log("Wrong command\n");
+      log("UDPLogReset::check : Wrong command\n");
     }
   }
 }
