@@ -73,7 +73,7 @@ char floatTextBuffer[20];
  * Pour effectuer un reset en invalidant le sketch :
  * echo "reprogram" | nc -q1 -u 192.168.10.250 2301
  * pour voir les log :
- * socat udp4-listen:2300,reuseaddr,fork -
+ * socat -u udp4-recv:2300,reuseaddr -
 */
 UDPLogReset logreset(2301,"192.168.10.255", 2300);
 
@@ -899,8 +899,10 @@ void loop()
       
       // Affichage des valeurs si on est sur l'écran d'affichage
       UpdateCurrentDisplay();
-
+      
       lastReadingTime = nowMillisec;
+
+      LogConsole("---------End Update------------\n");
     }
     
 
