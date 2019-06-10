@@ -7,8 +7,6 @@
 #include <Arduino.h>
 #include <NetEEPROM.h>
 #include <SPI.h>
-//#include <Ethernet2.h>
-//#include <EthernetUdp2.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
 #include <Ethernet.h>
 #include <EthernetUdp.h>   
 

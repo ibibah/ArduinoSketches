@@ -295,39 +295,47 @@ void InitializeWaterTemperatureSensor()
   }
 }
 
+unsigned long lastWaterResetTime = 0;
 
 // Fonction de mesure de la température de l'eau
 // ---------------------------------------------
 void UpdateWaterTemperature()
-{
-  waterTemperature = 0.0;
-  
+{  
   if ( waterTemperatureSensorOK == true )
   {
+    unsigned long nowMillisec = millis();
 
-    // On demande au capteur de mémoriser la température et lui laisser 800 ms pour le faire
-    waterTemperatureSensor.reset();
-    waterTemperatureSensor.select(waterTemperatureSensorAddress);
-    waterTemperatureSensor.write(0x44, 1);
-    delay(800);
-
-    // On demande au capteur de nous envoyer la mesure mémorisée
-    waterTemperatureSensor.reset();
-    waterTemperatureSensor.select(waterTemperatureSensorAddress);
-    waterTemperatureSensor.write(0xBE);
-
-    // Le mot reçu du capteur fait 9 octets, on les charge un par un dans le tableau de stockage
-    for ( byte i = 0; i < 9; ++i )
+    // 
+    if ( lastWaterResetTime == 0 )
     {
-      waterTemperatureSensorData[i] = waterTemperatureSensor.read();
+      lastWaterResetTime = nowMillisec;
+      // On demande au capteur de mémoriser la température et lui laisser 800 ms pour le faire
+      waterTemperatureSensor.reset();
+      waterTemperatureSensor.select(waterTemperatureSensorAddress);
+      waterTemperatureSensor.write(0x44, 1);
     }
+    else if ( (nowMillisec - lastWaterResetTime) > 800 )
+    {
+      // On demande au capteur de nous envoyer la mesure mémorisée
+      waterTemperatureSensor.reset();
+      waterTemperatureSensor.select(waterTemperatureSensorAddress);
+      waterTemperatureSensor.write(0xBE);
 
-    // Puis on converti la valeur reçue en température
-    waterTemperature = ( ( ( waterTemperatureSensorData[1] << 8 ) | waterTemperatureSensorData[0] )* 0.0625 );
+      // Le mot reçu du capteur fait 9 octets, on les charge un par un dans le tableau de stockage
+      for ( byte i = 0; i < 9; ++i )
+      {
+        waterTemperatureSensorData[i] = waterTemperatureSensor.read();
+      }
 
-    dtostrf(waterTemperature, 4, 1, floatTextBuffer);
-    sprintf(textBuffer, "UpdateWaterTemperature::La température de l'eau est : %s °C\n", floatTextBuffer);
-    LogConsole(textBuffer);
+      // Puis on converti la valeur reçue en température
+      waterTemperature = ( ( ( waterTemperatureSensorData[1] << 8 ) | waterTemperatureSensorData[0] )* 0.0625 );
+
+      dtostrf(waterTemperature, 4, 1, floatTextBuffer);
+      sprintf(textBuffer, "UpdateWaterTemperature::La température de l'eau est : %s °C\n", floatTextBuffer);
+      LogConsole(textBuffer);
+
+      lastWaterResetTime = 0;
+    }
   }
 }
 
@@ -559,6 +567,7 @@ void InitializeRelays()
 // GESTION ECRAN 
 // -------------------------------------------------------------------------------------
 #define  VALUES_SCREEN  0
+#define  INIT_SCREEN  1
 
 int currentScreen = -1;
 
@@ -651,6 +660,20 @@ void Display(int screen)
     display.setTextSize(1);
     display.print("LVL");
   
+    display.display();
+  }
+  else if ( screen == INIT_SCREEN )
+  {
+    display.clearDisplay();
+
+    // display a line of text
+    // Desired text size. 1 is default 6x8, 2 is 12x16, 3 is 18x24, etc
+    display.setTextColor(WHITE);
+
+    strcpy(textBuffer, "Initialization...");
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.print(textBuffer);
     display.display();
   }
 
@@ -812,9 +835,7 @@ void setup()
   display.display();
   // pour permettre de voir la version
   delay(2000);
- 
-  Display(VALUES_SCREEN);
- }
+  }
 
 
 // -------------------------------------------------------------------------------------
@@ -837,12 +858,16 @@ void loop()
     LogConsole(textBuffer);
     LogConsole("\n");
     
+    Display(INIT_SCREEN);
+    
     // Initialisation du capteur de température de l'eau
     InitializeWaterTemperatureSensor();
   
     InitializeRelays();
 
     firstLoop = false;
+
+    Display(VALUES_SCREEN);
   }
   else
   {
@@ -850,8 +875,10 @@ void loop()
     unsigned long nowMillisec = millis();
   
     // Gestion de la connexion MQTT
-    if ( !mqttClient.connected() )
+    if (mqttClient.loop() == false)
     {
+        // client disconnected
+
       if ( nowMillisec - lastReconnectAttempt > 5000 )
       {
         lastReconnectAttempt = nowMillisec;
@@ -861,13 +888,7 @@ void loop()
           lastReconnectAttempt = 0;
         }
       }
-    }
-    else
-    {
-      // Client connected
-      mqttClient.loop();
-    }
-  
+    }  
 
     // Etat des relays
     digitalWrite(RELAY_1, etatRelay1);
