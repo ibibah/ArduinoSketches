@@ -504,9 +504,9 @@ void UpdateFilterPressure()
   LogConsole(textBuffer);
 
   // CONVERT TO VOLTAGE
-  float voltage = 5.0 * raw / 1023; // voltage = 0..5V;  we do the math in millivolts!!
+  float voltage = 5.0 * raw / 1024; // voltage = 0..5V;  we do the math in millivolts!!
 
-  dtostrf(voltage, 3, 1, floatTextBuffer);
+  dtostrf(voltage, 3, 3, floatTextBuffer);
   sprintf(textBuffer, "UpdateFilterPressure::voltage = %s\n", floatTextBuffer);
   LogConsole(textBuffer);
 
@@ -514,19 +514,25 @@ void UpdateFilterPressure()
   if (voltage < 0.5)
   {
     filterPressure = 0.0;
+    dtostrf(filterPressure, 3, 1, floatTextBuffer);
+    sprintf(textBuffer, "UpdateFilterPressure::filterPressure ( voltage < 0.5 ) = %s\n", floatTextBuffer);
+    LogConsole(textBuffer);
   }
-  else if (voltage < 4.5)  // between 0.5 and 4.5 now...
+  else if (voltage <= 4.5)  // between 0.5 and 4.5 now...
   {
     filterPressure = mapFloat(voltage, 0.5, 4.5, 0.0, 12.0);    // variation on the Arduino map() function
-    
     dtostrf(filterPressure, 3, 1, floatTextBuffer);
     sprintf(textBuffer, "UpdateFilterPressure::filterPressure = %s\n", floatTextBuffer);
     LogConsole(textBuffer);
-  }
+ }
   else
   {
     filterPressure = 5.0; // pression hors limite
+    dtostrf(filterPressure, 3, 1, floatTextBuffer);
+    sprintf(textBuffer, "UpdateFilterPressure::filterPressure ( voltage > 4.5 ) = %s\n", floatTextBuffer);
+    LogConsole(textBuffer);
   }
+
 }
 
 // -------------------------------------------------------------------------------------
@@ -812,7 +818,7 @@ void setup()
    * starting the web server for resetting. This is why you should always start it before any other
    * server you might want to have */
   logreset.begin();
-
+  
   dht.begin();
   
   pinMode(FLOATLEVELPIN, INPUT);  
