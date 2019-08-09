@@ -14,18 +14,18 @@
 //                                    changement display ( ecran oled )
 //                                    ajout reponse à la seconde sur ordre MQTT ( forceMQTTUpdate )
 /*
-Using library Time at version 1.5 in folder: /home/wal/dev/arduino/sketchbooks/libraries/Time 
-Using library PubSubClient at version 2.6 in folder: /home/wal/dev/arduino/sketchbooks/libraries/PubSubClient 
-Using library OneWire at version 2.3.3 in folder: /home/wal/dev/arduino/sketchbooks/libraries/OneWire 
-Using library DHT_sensor_library at version 1.3.4 in folder: /home/wal/dev/arduino/sketchbooks/libraries/DHT_sensor_library 
-Using library Adafruit_SSD1306 at version 1.2.9 in folder: /home/wal/dev/arduino/sketchbooks/libraries/Adafruit_SSD1306 
-Using library Wire at version 1.0 in folder: /home/wal/dev/arduino/arduino-1.8.9/hardware/arduino/avr/libraries/Wire 
-Using library SPI at version 1.0 in folder: /home/wal/dev/arduino/arduino-1.8.9/hardware/arduino/avr/libraries/SPI 
-Using library Adafruit_GFX_Library at version 1.5.0 in folder: /home/wal/dev/arduino/sketchbooks/libraries/Adafruit_GFX_Library 
-Using library NetEEPROM at version 1.0.0 in folder: /home/wal/dev/arduino/sketchbooks/libraries/NetEEPROM 
-Using library NewEEPROM in folder: /home/wal/dev/arduino/sketchbooks/libraries/NewEEPROM (legacy)
-Using library Ethernet at version 2.0.0 in folder: /home/wal/dev/arduino/arduino-1.8.9/libraries/Ethernet 
-Using library Adafruit_Unified_Sensor at version 1.0.2 in folder: /home/wal/dev/arduino/sketchbooks/libraries/Adafruit_Unified_Sensor 
+Utilisation de la bibliothèque Time version 1.5 dans le dossier: D:\wal\Documents\Arduino\libraries\Time 
+Utilisation de la bibliothèque PubSubClient version 2.7 dans le dossier: D:\wal\Documents\Arduino\libraries\PubSubClient 
+Utilisation de la bibliothèque OneWire version 2.3.4 dans le dossier: D:\wal\Documents\Arduino\libraries\OneWire 
+Utilisation de la bibliothèque DHT_sensor_library version 1.3.4 dans le dossier: D:\wal\Documents\Arduino\libraries\DHT_sensor_library 
+Utilisation de la bibliothèque Adafruit_SSD1306 version 1.2.9 dans le dossier: D:\wal\Documents\Arduino\libraries\Adafruit_SSD1306 
+Utilisation de la bibliothèque Wire version 1.0 dans le dossier: C:\Program Files (x86)\Arduino\hardware\arduino\avr\libraries\Wire 
+Utilisation de la bibliothèque SPI version 1.0 dans le dossier: C:\Program Files (x86)\Arduino\hardware\arduino\avr\libraries\SPI 
+Utilisation de la bibliothèque Adafruit_GFX_Library version 1.5.3 dans le dossier: D:\wal\Documents\Arduino\libraries\Adafruit_GFX_Library 
+Utilisation de la bibliothèque NetEEPROM version 1.0.0 dans le dossier: D:\wal\Documents\Arduino\libraries\NetEEPROM 
+Utilisation de la bibliothèque NewEEPROM prise dans le dossier : D:\wal\Documents\Arduino\libraries\NewEEPROM (legacy)
+Utilisation de la bibliothèque Ethernet version 2.0.0 dans le dossier: C:\Program Files (x86)\Arduino\libraries\Ethernet 
+Utilisation de la bibliothèque Adafruit_Unified_Sensor version 1.0.3 dans le dossier: D:\wal\Documents\Arduino\libraries\Adafruit_Unified_Sensor 
 */
 
 #include <TimeLib.h>
@@ -174,7 +174,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 IPAddress remoteJeedomIp(192,168,10,50); 
 const unsigned int MQTTBrokerPort = 1883;
 
-void LogConsole(char* s)
+void LogConsole(const char* s)
 {
   utf8ascii(s);
 
@@ -223,120 +223,105 @@ OneWire waterTemperatureSensor(pin_waterTemperature);
 
 byte waterTemperatureSensorData[9];
 byte waterTemperatureSensorAddress[8];
-bool waterTemperatureSensorOK = false;
-
 float waterTemperature = 0.0;
-
-
-// Fonction d'initialisation du capteur de température de l'eau
-// ------------------------------------------------------------
-void InitializeWaterTemperatureSensor()
-{
-  LogConsole("Détection du capteur de température de l'eau\n");
-
-  // Recherche d'un capteur 1-wire
-  int  nbTries = 3;
-  bool found   = false;
-  while ( ( ( found = waterTemperatureSensor.search(waterTemperatureSensorAddress) ) == false ) &&
-          ( nbTries > 0 ) )
-  {
-    sprintf(textBuffer, "InitializeWaterTemperatureSensor::Aucun capteur 1-wire présent sur la broche %d !\n", pin_waterTemperature);
-    LogConsole(textBuffer);
-    delay(1000);
-    --nbTries;
-  }
-
-  if ( found == true )
-  {
-    // Un capteur a été trouvé, affichage de son adresse
-    LogConsole("InitializeWaterTemperatureSensor::Capteur 1-wire trouvé avec l'adresse 64 bits :\n");
-    sprintf(textBuffer, "%02X %02X %02X %02X %02X %02X %02X %02X\n", 
-            waterTemperatureSensorAddress[0],
-            waterTemperatureSensorAddress[1],
-            waterTemperatureSensorAddress[2],
-            waterTemperatureSensorAddress[3],
-            waterTemperatureSensorAddress[4],
-            waterTemperatureSensorAddress[5],
-            waterTemperatureSensorAddress[6],
-            waterTemperatureSensorAddress[7]);
-    LogConsole(textBuffer);
-  
-    // Test du type de capteur
-    // Il est donné par le 1er octet de l'adresse sur 64 bits
-    // Un capteur DS18B20 a pour type de capteur la valeur 0x28
-    if ( waterTemperatureSensorAddress[0] != 0x28 )
-    {
-      LogConsole("InitializeWaterTemperatureSensor::Le capteur présent n'est pas un capteur de température DS18B20 !\n");
-    }
-  
-    else
-    {
-      LogConsole("InitializeWaterTemperatureSensor::Type du capteur 1-wire présent : capteur de température DS18B20\n");
-  
-      // Test du code CRC
-      // Il est donné par le dernier octet de l'adresse 64 bits
-      if ( waterTemperatureSensor.crc8(waterTemperatureSensorAddress, 7) != waterTemperatureSensorAddress[7] )
-      {
-        LogConsole("InitializeWaterTemperatureSensor::Le capteur présent n'a pas un code CRC valide !\n");
-      }
-  
-      else
-      {
-        LogConsole("InitializeWaterTemperatureSensor::Le capteur présent a un code CRC valide\n");
-        LogConsole("InitializeWaterTemperatureSensor::Détection du capteur de température de l'eau terminée\n");
-  
-        waterTemperatureSensorOK = true;
-      }
-    }
-  }
-  else
-  {
-    LogConsole("InitializeWaterTemperatureSensor::Aucun capteur 1-wire trouvé !\n");
-  }
-}
-
-unsigned long lastWaterResetTime = 0;
+unsigned long lastWaterRequestTime = 0;
 
 // Fonction de mesure de la température de l'eau
 // ---------------------------------------------
 void UpdateWaterTemperature()
 {  
-  if ( waterTemperatureSensorOK == true )
+  bool updated = false;
+
+  // reset de la recherche des capteurs
+  waterTemperatureSensor.reset_search();
+
+  // Recherche d'un capteur 1-wire
+  if ( waterTemperatureSensor.search(waterTemperatureSensorAddress) == false )
   {
-    unsigned long nowMillisec = millis();
-
-    // 
-    if ( lastWaterResetTime == 0 )
+    sprintf(textBuffer, "UpdateWaterTemperature::Aucun capteur 1-wire présent sur la broche %d !\n", pin_waterTemperature);
+    LogConsole(textBuffer);
+  }
+  else
+  {
+    // Test du type de capteur
+    // Il est donné par le 1er octet de l'adresse sur 64 bits
+    // Un capteur DS18B20 a pour type de capteur la valeur 0x28
+    if ( waterTemperatureSensorAddress[0] != 0x28 )
     {
-      lastWaterResetTime = nowMillisec;
-      // On demande au capteur de mémoriser la température et lui laisser 800 ms pour le faire
-      waterTemperatureSensor.reset();
-      waterTemperatureSensor.select(waterTemperatureSensorAddress);
-      waterTemperatureSensor.write(0x44, 1);
+      LogConsole("UpdateWaterTemperature::Le capteur présent n'est pas un capteur de température DS18B20 !\n");
     }
-    else if ( (nowMillisec - lastWaterResetTime) > 800 )
+  
+    else
     {
-      // On demande au capteur de nous envoyer la mesure mémorisée
-      waterTemperatureSensor.reset();
-      waterTemperatureSensor.select(waterTemperatureSensorAddress);
-      waterTemperatureSensor.write(0xBE);
-
-      // Le mot reçu du capteur fait 9 octets, on les charge un par un dans le tableau de stockage
-      for ( byte i = 0; i < 9; ++i )
+      // Test du code CRC
+      // Il est donné par le dernier octet de l'adresse 64 bits
+      if ( waterTemperatureSensor.crc8(waterTemperatureSensorAddress, 7) != waterTemperatureSensorAddress[7] )
       {
-        waterTemperatureSensorData[i] = waterTemperatureSensor.read();
+        LogConsole("UpdateWaterTemperature::Le capteur présent n'a pas un code CRC valide !\n");
       }
+      else
+      {
+        unsigned long nowMillisec = millis();
+        
+        if ( lastWaterRequestTime == 0 )
+        {
+          // On memorise l'heure de la demande
+          lastWaterRequestTime = nowMillisec;
 
-      // Puis on converti la valeur reçue en température
-      waterTemperature = ( ( ( waterTemperatureSensorData[1] << 8 ) | waterTemperatureSensorData[0] )* 0.0625 );
+          // On demande au capteur de mémoriser la température et lui laisser 1000 ms pour le faire
+          waterTemperatureSensor.reset();
+          waterTemperatureSensor.select(waterTemperatureSensorAddress);
+          waterTemperatureSensor.write(0x44, 1);
 
-      dtostrf(waterTemperature, 4, 1, floatTextBuffer);
-      sprintf(textBuffer, "UpdateWaterTemperature::La température de l'eau est : %s °C\n", floatTextBuffer);
-      LogConsole(textBuffer);
+          LogConsole("UpdateWaterTemperature::Envoie d'une demande de calcul au capteur de la température de l'eau!\n");
+        }
+        else if ( (nowMillisec - lastWaterRequestTime) > 750 )
+        {
 
-      lastWaterResetTime = 0;
+          // On demande au capteur de nous envoyer la mesure mémorisée
+          waterTemperatureSensor.reset();
+          waterTemperatureSensor.select(waterTemperatureSensorAddress);
+          waterTemperatureSensor.write(0xBE);
+
+          // Le mot reçu du capteur fait 9 octets, on les charge un par un dans le tableau de stockage
+          for ( byte i = 0; i < 9; ++i )
+          {
+            waterTemperatureSensorData[i] = waterTemperatureSensor.read();
+          }
+
+          // Puis on converti la valeur reçue en température
+          waterTemperature = ( ( ( waterTemperatureSensorData[1] << 8 ) | waterTemperatureSensorData[0] )* 0.0625 );  
+ 
+          // On réinitialise l'heure pour reprovoquer une demande
+          lastWaterRequestTime = 0;
+
+          LogConsole("UpdateWaterTemperature::Lecture de la température de l'eau!\n");
+        }
+        else
+        {
+          LogConsole("UpdateWaterTemperature::Attente du calcul de la température de l'eau...\n");
+        }
+
+        updated = true;        
+      }
     }
   }
+  
+  if ( updated == false )
+  {
+    if ( waterTemperature != 0 )
+    {
+      waterTemperature = 0.0;
+    }
+    else
+    {
+      waterTemperature = -1.0;
+    }
+  }
+
+  dtostrf(waterTemperature, 4, 1, floatTextBuffer);
+  sprintf(textBuffer, "UpdateWaterTemperature::La température de l'eau est : %s °C\n", floatTextBuffer);
+  LogConsole(textBuffer);  
 }
 
 
@@ -449,8 +434,8 @@ void UpdatePH()
   LogConsole(textBuffer);
 #endif
 
-  // On utilise la calibration entre -1.0 et +1.0
-  potentiometerValue = (potentiometerValue - 512.0) / 500.0;
+  // On utilise la calibration entre -3.0 et +3.0
+  potentiometerValue = (potentiometerValue - 512.0) / 170.0;
   
 #ifdef DEBUG_PH_ORP
   dtostrf(potentiometerValue, 3, 1, floatTextBuffer);
@@ -865,9 +850,6 @@ void loop()
     LogConsole("\n");
     
     Display(INIT_SCREEN);
-    
-    // Initialisation du capteur de température de l'eau
-    InitializeWaterTemperatureSensor();
   
     InitializeRelays();
 
