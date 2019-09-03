@@ -706,13 +706,13 @@ void UpdateMQTT()
 
   int val = digitalRead(RELAY_1);
   mqttClient.publish("PoolAndSpray/Pool/Filtration/Pompe", (val==LOW)?"1":"0");
-  val = digitalRead(RELAY_2);
+  val = digitalRead(RELAY_5);
   mqttClient.publish("PoolAndSpray/Pool/ProjecteurLED/Actif", (val==LOW)?"1":"0");
-  val = digitalRead(RELAY_3);
+  val = digitalRead(RELAY_2);
   mqttClient.publish("PoolAndSpray/Arrosage/Zone1/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_4);
   mqttClient.publish("PoolAndSpray/Arrosage/Zone2/Actif", (val==LOW)?"1":"0");
-  val = digitalRead(RELAY_5);
+  val = digitalRead(RELAY_3);
   mqttClient.publish("PoolAndSpray/Arrosage/Zone3/Actif", (val==LOW)?"1":"0");
   val = digitalRead(RELAY_6);
   mqttClient.publish("PoolAndSpray/Arrosage/Zone4/Actif", (val==LOW)?"1":"0");
